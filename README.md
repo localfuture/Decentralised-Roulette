@@ -1,0 +1,4 @@
+## DAO Voting
+"DAO" has formed. This group is like a big family that shares a special treasury. Everyone who joins puts in some money, and together, they decide how to use it. This treasury is not just for saving; it's for helping others, especially during the festival. The members of the DAO come together to make sure everyone in their community can enjoy the celebrations. They use the treasury to support local artists, help those in need, and make the season even more special for everyone.
+
+A DAO is a type of organization represented by rules encoded as a computer program that is transparent, controlled by the organization members and not influenced by a central government. In this context, the DAO is a system where decisions are made collectively by its members through voting.
