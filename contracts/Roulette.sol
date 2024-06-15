@@ -9,11 +9,14 @@ contract Roulette is ERC20, Ownable {
     using SafeMath for uint256;
 
     uint256 spinWheelResult;
+    bool spinWheel;
 
     struct Bet {
         address player;
         uint amount;
     }
+
+    enum BetType { None, Even, Odd, Number }
 
     mapping(uint => Bet)betOnEven;
     uint betOnEvenId;
@@ -49,23 +52,122 @@ contract Roulette is ERC20, Ownable {
         emit TokensBought(msg.sender, amount);
     }
 
-    function placeBetEven(uint256 betAmount) public {}
+    /**
+     * @dev This function allows players to place bets on the roulette landing 
+     * on an even number and the amount of tokens bet are burned by the contract.
+     * @param betAmount bet amount
+     */
+    function placeBetEven(uint256 betAmount) public {
+        require(balanceOf(msg.sender) > betAmount, "Insufficient");
+        _transfer(msg.sender, address(this), betAmount);
+        betOnEven[betOnEvenId].player = msg.sender;
+        betOnEven[betOnEvenId].amount = betAmount;
+        betOnEvenId++;
+        emit BetPlaced(msg.sender, BetType.Even, amount);
+    }
 
-    function placeBetOdd(uint256 betAmount) public {}
+    /**
+     * @dev This function allows players to place bets on the roulette landing 
+     * on an odd number and the amount of tokens bet are burned by the contract.
+     * @param betAmount bet amount
+     */
+    function placeBetOdd(uint256 betAmount) public {
+        require(balanceOf(msg.sender) > betAmount, "Insufficient");
+        _transfer(msg.sender, address(this), betAmount);
+        betOnOdd[betOnOddId].player = msg.sender;
+        betOnOdd[betOnOddId].amount = betAmount;
+        betOnOdd++;
+        emit BetPlaced(msg.sender, BetType.Odd, amount);
+    }
 
-    function placeBetOnNumber(uint256 betAmount, uint256 number) public {}
+    /**
+     * @dev This function allows players to place bets on the roulette landing 
+     * on a specific number and the amount of tokens bet are burned by the contract. 
+     * The number should be within the range of 0 to 36 inclusive.
+     * @param betAmount bet amount
+     * @param number number
+     */
+    function placeBetOnNumber(uint256 betAmount, uint256 number) public {
+        require(balanceOf(msg.sender) > betAmount, "Insufficient");
+        require(number <= 36, "Below 36");
+        require(betOnDigit[number].player == address(0), "Already betted");
+        _transfer(msg.sender, address(this), betAmount);
+        betOnDigit[number].player = msg.sender;
+        betOnDigit[number].amount = betAmount;
+        emit BetPlaced(msg.sender, BetType.Number, number);
+    }
 
-    function sellTokens(uint256 tokenAmount) public {}
+    /**
+     * @dev This function allows players to sell their tokens and receive Ether in return. 
+     * The tokens sold are burned by the contract.The exchange rate of tokens to Ether 
+     * is the same as when buying tokens.
+     * @param tokenAmount 
+     */
+    function sellTokens(uint256 tokenAmount) public {
+        require(tokenAmount > 0, "Token amount");
+        require(balanceOf(msg.sender) >= tokenAmount, "No token");
+        _burn(msg.sender, tokenAmount);
+        uint eth = tokenAmount.div(1000);
+        payable(address(this)).transfer(msg.sender);
+        emit TokensSold(msg.sender, amount);
+    }
 
     //================================================================
     //                      Owner Function
     //================================================================
 
-    function spinWheel() public {}
+    /**
+     * @dev This function simulates the spinning of the roulette wheel 
+     * and determines the winning bet. It should generate a random number 
+     * between 0 and 36 inclusive, and it sets the variable SpinWheelResultwith 
+     * the generated random number.This function can be called only by the owner.
+     */
+    function spinWheel() public onlyOwner {
+        // TODO: Rework using Chainlink VRF
+        bytes32 blockHash = blockhash(block.number - 1); // Get previous block hash
+        spinWheelResult = uint256(blockHash) % 37; // random number between 0 to 36 inclusive
+        spinWheel = true;
+        emit SpinResult(spinWheelResult);
+    }
 
-    function transferWinnings() public {}
+    /**
+     * @dev This function can be called only by the owner and only after spinWheel 
+     * function has been called. This function mint and transfers the winning amount 
+     * of tokens according to the generated random number and the bets.
+     */
+    function transferWinnings() public onlyOwner {
+        require(spinWheel, "Spin wheel");
+        
+        Bet memory winnerDetail = betOnDigit[spinWheelResult];
 
-    function setSpinWheelResult(uint256 key) public {}
+        if (winnerDetail.player != address(0)) {
+            uint betOwn = (winner.amount.mul(1800)).div(100);
+            _mint(winner.player, betOwn);
+            emit WinningsTransferred(winner.player, betOwn);
+        }
+
+        if ( spinWheelResult % 2 == 0) {
+            for(uint i = 0; i < betOnEvenId; i++) {
+                Bet memory evenBetWon = (betOnEven[betOnEvenId].amount.mul(80)).div(100);
+                _mint(betOnEven[betOnEvenId].player, oddBetWon);
+            }
+        } else {
+            for(uint i = 0; i < betOnOddId; i++) {
+                Bet memory oddBetWon = (betOnOdd[betOnOddId].amount.mul(80)).div(100);
+                _mint(betOnOdd[betOnEvenId].player, oddBetWon);
+            }
+        }
+    }
+
+    /**
+     * @dev This function allows to manually set the result of the spin wheel 
+     * for testing purposes to ensure the integrity and functionality of the contract. 
+     * The function takes a single parameter, which is the desired result of the spin wheel. 
+     * The function then sets the SpinWheelResult variable with the passed parameter.
+     */
+    function setSpinWheelResult(uint256 key) public onlyOwner {
+        spinWheelResult = key;
+    }
 
     //================================================================
     //                      View Function
