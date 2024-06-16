@@ -3,13 +3,13 @@ pragma solidity ^0.8.20;
 
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
-import "@openzeppelin/contracts/utils/math/SafeMath.sol";
+import "@openzeppelin/contracts/utils/math/Math.sol";
 
 contract Roulette is ERC20, Ownable {
-    using SafeMath for uint256;
+    using Math for uint256;
 
     uint256 spinWheelResult;
-    bool spinWheel;
+    bool spinWheelChecker = false;
 
     struct Bet {
         address player;
@@ -29,7 +29,7 @@ contract Roulette is ERC20, Ownable {
 
     // Events
     event TokensBought(address indexed player, uint256 amount);
-    event BetPlaced(address indexed player, string betType, uint256 amount);
+    event BetPlaced(address indexed player, BetType, uint256 amount);
     event SpinResult(uint256 number);
     event TokensSold(address indexed player, uint256 amount);
     event WinningsTransferred(address indexed player, uint256 amount);
@@ -47,7 +47,8 @@ contract Roulette is ERC20, Ownable {
      */
     function buyTokens() public payable {
         require(msg.value > 0, "Ether value must be greater than 0");
-        uint256 amount = msg.value.mul(1000); // 1 Ether = 1000 tokens
+        (,uint ethValue) = msg.value.tryDiv(1 ether); 
+        (,uint amount) = ethValue.tryMul(1000); // 1 Ether = 1000 tokens
         _mint(msg.sender, amount);
         emit TokensBought(msg.sender, amount);
     }
@@ -58,12 +59,12 @@ contract Roulette is ERC20, Ownable {
      * @param betAmount bet amount
      */
     function placeBetEven(uint256 betAmount) public {
-        require(balanceOf(msg.sender) > betAmount, "Insufficient");
+        require(balanceOf(msg.sender) >= betAmount, "Insufficient");
         _transfer(msg.sender, address(this), betAmount);
         betOnEven[betOnEvenId].player = msg.sender;
         betOnEven[betOnEvenId].amount = betAmount;
         betOnEvenId++;
-        emit BetPlaced(msg.sender, BetType.Even, amount);
+        emit BetPlaced(msg.sender, BetType.Even, betAmount);
     }
 
     /**
@@ -72,12 +73,12 @@ contract Roulette is ERC20, Ownable {
      * @param betAmount bet amount
      */
     function placeBetOdd(uint256 betAmount) public {
-        require(balanceOf(msg.sender) > betAmount, "Insufficient");
+        require(balanceOf(msg.sender) >= betAmount, "Insufficient");
         _transfer(msg.sender, address(this), betAmount);
         betOnOdd[betOnOddId].player = msg.sender;
         betOnOdd[betOnOddId].amount = betAmount;
-        betOnOdd++;
-        emit BetPlaced(msg.sender, BetType.Odd, amount);
+        betOnOddId++;
+        emit BetPlaced(msg.sender, BetType.Odd, betAmount);
     }
 
     /**
@@ -88,12 +89,13 @@ contract Roulette is ERC20, Ownable {
      * @param number number
      */
     function placeBetOnNumber(uint256 betAmount, uint256 number) public {
-        require(balanceOf(msg.sender) > betAmount, "Insufficient");
-        require(number <= 36, "Below 36");
+        require(balanceOf(msg.sender) >= betAmount, "Insufficient");
+        require(number <= 36, "Below 37");
         require(betOnDigit[number].player == address(0), "Already betted");
         _transfer(msg.sender, address(this), betAmount);
         betOnDigit[number].player = msg.sender;
         betOnDigit[number].amount = betAmount;
+        betOnDigitId++;
         emit BetPlaced(msg.sender, BetType.Number, number);
     }
 
@@ -101,15 +103,15 @@ contract Roulette is ERC20, Ownable {
      * @dev This function allows players to sell their tokens and receive Ether in return. 
      * The tokens sold are burned by the contract.The exchange rate of tokens to Ether 
      * is the same as when buying tokens.
-     * @param tokenAmount 
+     * @param tokenAmount token amount
      */
     function sellTokens(uint256 tokenAmount) public {
         require(tokenAmount > 0, "Token amount");
         require(balanceOf(msg.sender) >= tokenAmount, "No token");
         _burn(msg.sender, tokenAmount);
-        uint eth = tokenAmount.div(1000);
-        payable(address(this)).transfer(msg.sender);
-        emit TokensSold(msg.sender, amount);
+        (, uint eth) = tokenAmount.tryDiv(1000);
+        payable(msg.sender).transfer(eth);
+        emit TokensSold(msg.sender, tokenAmount);
     }
 
     //================================================================
@@ -126,7 +128,7 @@ contract Roulette is ERC20, Ownable {
         // TODO: Rework using Chainlink VRF
         bytes32 blockHash = blockhash(block.number - 1); // Get previous block hash
         spinWheelResult = uint256(blockHash) % 37; // random number between 0 to 36 inclusive
-        spinWheel = true;
+        spinWheelChecker = true;
         emit SpinResult(spinWheelResult);
     }
 
@@ -136,25 +138,31 @@ contract Roulette is ERC20, Ownable {
      * of tokens according to the generated random number and the bets.
      */
     function transferWinnings() public onlyOwner {
-        require(spinWheel, "Spin wheel");
+        require(spinWheelChecker, "Spin wheel");
         
         Bet memory winnerDetail = betOnDigit[spinWheelResult];
 
         if (winnerDetail.player != address(0)) {
-            uint betOwn = (winner.amount.mul(1800)).div(100);
-            _mint(winner.player, betOwn);
-            emit WinningsTransferred(winner.player, betOwn);
+            (, uint bet) = winnerDetail.amount.tryMul(1800);
+            (, uint betOwn) = bet.tryDiv(100);
+            (, uint finl) = betOwn.tryAdd(winnerDetail.amount);
+            _mint(winnerDetail.player, finl);
+            emit WinningsTransferred(winnerDetail.player, betOwn);
         }
 
         if ( spinWheelResult % 2 == 0) {
             for(uint i = 0; i < betOnEvenId; i++) {
-                Bet memory evenBetWon = (betOnEven[betOnEvenId].amount.mul(80)).div(100);
-                _mint(betOnEven[betOnEvenId].player, oddBetWon);
+                (, uint bet) = betOnEven[i].amount.tryMul(80);
+                (, uint betOwn) = bet.tryDiv(100);
+                (, uint finl) = betOwn.tryAdd(betOnEven[i].amount);
+                _mint(betOnEven[i].player, finl);
             }
         } else {
             for(uint i = 0; i < betOnOddId; i++) {
-                Bet memory oddBetWon = (betOnOdd[betOnOddId].amount.mul(80)).div(100);
-                _mint(betOnOdd[betOnEvenId].player, oddBetWon);
+                (, uint bet) = betOnOdd[i].amount.tryMul(80);
+                (, uint betOwn) = bet.tryDiv(100);
+                (, uint finl) = betOwn.tryAdd(betOnOdd[i].amount);
+                _mint(betOnOdd[i].player, finl);
             }
         }
     }
@@ -167,6 +175,7 @@ contract Roulette is ERC20, Ownable {
      */
     function setSpinWheelResult(uint256 key) public onlyOwner {
         spinWheelResult = key;
+        spinWheelChecker = true;
     }
 
     //================================================================
@@ -197,7 +206,7 @@ contract Roulette is ERC20, Ownable {
      */
     function checkBetsOnEven() public view returns (address[] memory, uint256[] memory) {
         address[] memory players = new address[](betOnEvenId);
-        address[] memory amounts = new uint[](betOnEvenId);
+        uint[] memory amounts = new uint[](betOnEvenId);
 
         for(uint i = 0; i < betOnEvenId; i++) {
             players[i] = betOnEven[i].player;
@@ -216,7 +225,7 @@ contract Roulette is ERC20, Ownable {
      */
     function checkBetsOnOdd() public view returns (address[] memory, uint256[] memory) {
         address[] memory players = new address[](betOnOddId);
-        address[] memory amounts = new uint[](betOnbetOnOddIdvenId);
+        uint[] memory amounts = new uint[](betOnOddId);
 
         for(uint i = 0; i < betOnOddId; i++) {
             players[i] = betOnOdd[i].player;
@@ -236,15 +245,14 @@ contract Roulette is ERC20, Ownable {
         address[] memory players = new address[](betOnDigitId);
         uint[] memory digits = new uint[](betOnDigitId);
         uint[] memory amounts = new uint[](betOnDigitId);
+        uint count = 0;
 
-        uint counter;
-
-        for(uint i = 0; i <= 36; i++) {
+        for(uint i = 0; i < 37; i++) {
             if (betOnDigit[i].player != address(0)) {
-                players[counter] = betOnDigit[counter].player;
-                digits[counter] = i;
-                amounts[counter] = betOnDigit[counter].amount;
-                counter++;
+                players[count] = betOnDigit[i].player;
+                digits[count] = i;
+                amounts[count] = betOnDigit[i].amount;
+                count++;
             }
         }
 
